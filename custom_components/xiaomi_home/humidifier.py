@@ -12,6 +12,8 @@ from homeassistant.components.humidifier import (HumidifierEntity,
                                                  HumidifierDeviceClass,
                                                  HumidifierEntityFeature,
                                                  HumidifierAction)
+from homeassistant.components.humidifier.const import (
+     MODE_NORMAL, MODE_ECO, MODE_BOOST, MODE_COMFORT, MODE_SLEEP, MODE_AUTO)
 
 from .miot.miot_spec import MIoTSpecProperty
 from .miot.miot_device import MIoTDevice, MIoTEntityData, MIoTServiceEntity
@@ -94,7 +96,24 @@ class Humidifier(MIoTServiceEntity, HumidifierEntity):
                     _LOGGER.error('mode value_list is None, %s',
                                   self.entity_id)
                     continue
-                self._mode_map = prop.value_list.to_map()
+                self._mode_map = {}
+                for item in prop.value_list.items:
+                    if item.name in {'none', 'the_standard_model',
+                                     'constant_speed', '标准'}:
+                        self._mode_map[item.value] = MODE_NORMAL
+                    elif item.name in {'低湿'}:
+                        self._mode_map[item.value] = MODE_ECO
+                    elif item.name in {'strong', '高湿'}:
+                        self._mode_map[item.value] = MODE_BOOST
+                    elif item.name in {'skin'}:
+                        self._mode_map[item.value] = MODE_COMFORT
+                    elif item.name in {'sleep', 'sleep_mode', '睡眠'}:
+                        self._mode_map[item.value] = MODE_SLEEP
+                    elif item.name in {'constant_humidity',
+                                       'const_humidity', '自动'}:
+                        self._mode_map[item.value] = MODE_AUTO
+                    else:
+                        self._mode_map[item.value] = item.description
                 # 優化: 預先建立 O(1) 的模式反向查找字典，避免執行期效能損耗
                 self._mode_reverse_map = {v: k for k, v in self._mode_map.items()}
                 
