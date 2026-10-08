@@ -131,6 +131,8 @@ class Humidifier(MIoTServiceEntity, HumidifierEntity):
 
     async def async_set_humidity(self, humidity: int) -> None:
         """Set new target humidity."""
+        if self._prop_target_humidity is None:
+            return
         await self.set_property_async(prop=self._prop_target_humidity,
                                       value=humidity)
 
