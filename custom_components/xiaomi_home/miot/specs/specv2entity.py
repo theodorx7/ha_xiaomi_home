@@ -9,17 +9,21 @@ from homeassistant.components.sensor import SensorStateClass
 from homeassistant.components.event import EventDeviceClass
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass
 
-from homeassistant.const import (CONCENTRATION_PARTS_PER_MILLION, EntityCategory, LIGHT_LUX, 
-                                 UnitOfEnergy, UnitOfPower, UnitOfElectricCurrent, PERCENTAGE,
-                                 UnitOfElectricPotential, UnitOfTemperature, UnitOfPressure )
-try:
-    from homeassistant.const import UnitOfDensity  # type: ignore
-    CONCENTRATION_MICROGRAMS_PER_CUBIC_METER = UnitOfDensity.MICROGRAMS_PER_CUBIC_METER
-except (ImportError, AttributeError):
-    try:
-        from homeassistant.const import CONCENTRATION_MICROGRAMS_PER_CUBIC_METER  # type: ignore
-    except (ImportError, AttributeError):
-        CONCENTRATION_MICROGRAMS_PER_CUBIC_METER = 'μg/m³'
+from homeassistant.const import (EntityCategory, LIGHT_LUX, UnitOfEnergy,
+                                 UnitOfPower, UnitOfElectricCurrent,
+                                 UnitOfElectricPotential, UnitOfTemperature,
+                                 UnitOfPressure)
+try:  # UnitOfDensity and UnitOfRatio are introduced in HA core 2026.7
+    from homeassistant.const import UnitOfDensity, UnitOfRatio
+    CONCENTRATION_MICROGRAMS_PER_CUBIC_METER = (
+        UnitOfDensity.MICROGRAMS_PER_CUBIC_METER)
+    CONCENTRATION_PARTS_PER_MILLION = UnitOfRatio.PARTS_PER_MILLION
+    PERCENTAGE = UnitOfRatio.PERCENTAGE
+except ImportError:
+    from homeassistant.const import (
+        CONCENTRATION_MICROGRAMS_PER_CUBIC_METER,
+        CONCENTRATION_PARTS_PER_MILLION,
+        PERCENTAGE)
 
 # 優化：定義共用的不可變權限常數，減少記憶體重複配置
 _R = frozenset({'read'})
