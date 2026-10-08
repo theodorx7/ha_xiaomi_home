@@ -9,11 +9,9 @@ from homeassistant.components.sensor import SensorStateClass
 from homeassistant.components.event import EventDeviceClass
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass
 
-from homeassistant.const import (EntityCategory, LIGHT_LUX, UnitOfEnergy,
-                                 UnitOfPower, UnitOfElectricCurrent,
-                                 UnitOfElectricPotential, UnitOfTemperature,
-                                 UnitOfPressure, PERCENTAGE)
-
+from homeassistant.const import (CONCENTRATION_PARTS_PER_MILLION, EntityCategory, LIGHT_LUX, 
+                                 UnitOfEnergy, UnitOfPower, UnitOfElectricCurrent, PERCENTAGE,
+                                 UnitOfElectricPotential, UnitOfTemperature, UnitOfPressure )
 try:
     from homeassistant.const import UnitOfDensity  # type: ignore
     CONCENTRATION_MICROGRAMS_PER_CUBIC_METER = UnitOfDensity.MICROGRAMS_PER_CUBIC_METER
@@ -579,6 +577,12 @@ SPEC_PROP_TRANS_MAP = MappingProxyType({
             'device_class': SensorDeviceClass.AQI,
             'entity': 'sensor',
             'state_class': SensorStateClass.MEASUREMENT,
+        },
+        'co2-density': {
+            'device_class': SensorDeviceClass.CO2,
+            'entity': 'sensor',
+            'state_class': SensorStateClass.MEASUREMENT,
+            'unit_of_measurement': CONCENTRATION_PARTS_PER_MILLION
         },
         'pm2.5-density': {
             'device_class': SensorDeviceClass.PM25,
