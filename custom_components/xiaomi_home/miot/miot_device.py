@@ -11,7 +11,6 @@ from homeassistant.const import (
     DEGREE,
     LIGHT_LUX,
     REVOLUTIONS_PER_MINUTE,
-    PERCENTAGE,
     SIGNAL_STRENGTH_DECIBELS,
     UnitOfBloodGlucoseConcentration,
     UnitOfEnergy,
@@ -25,6 +24,7 @@ from homeassistant.const import (
     UnitOfTime,
     UnitOfTemperature,
     UnitOfPressure,
+    UnitOfConductivity,
     UnitOfPower,
     UnitOfVolume,
     UnitOfVolumeFlowRate,
@@ -62,39 +62,23 @@ _LOGGER = logging.getLogger(__name__)
 # =========================================================
 # GLOBALS MAPS: Optimized for O(1) Lookup
 # =========================================================
-try:
-    from homeassistant.const import UnitOfConductivity  # type: ignore
-    _MICROSIEMENS_PER_CM = UnitOfConductivity.MICROSIEMENS_PER_CM
-except Exception:
-    _MICROSIEMENS_PER_CM = 'μS/cm'
 
-try:
-    from homeassistant.const import UnitOfDensity  # type: ignore
-    CONCENTRATION_MICROGRAMS_PER_CUBIC_METER = UnitOfDensity.MICROGRAMS_PER_CUBIC_METER
-    CONCENTRATION_MILLIGRAMS_PER_CUBIC_METER = UnitOfDensity.MILLIGRAMS_PER_CUBIC_METER
-except (ImportError, AttributeError):
-    try:
-        from homeassistant.const import (  # type: ignore
-            CONCENTRATION_MICROGRAMS_PER_CUBIC_METER,
-            CONCENTRATION_MILLIGRAMS_PER_CUBIC_METER,
-        )
-    except (ImportError, AttributeError):
-        CONCENTRATION_MICROGRAMS_PER_CUBIC_METER = 'μg/m³'
-        CONCENTRATION_MILLIGRAMS_PER_CUBIC_METER = 'mg/m³'
-
-try:
-    from homeassistant.const import UnitOfRatio  # type: ignore
-    CONCENTRATION_PARTS_PER_BILLION = UnitOfRatio.PARTS_PER_BILLION
+try:  # UnitOfDensity and UnitOfRatio are introduced in HA core 2026.7
+    from homeassistant.const import UnitOfDensity, UnitOfRatio
+    CONCENTRATION_MICROGRAMS_PER_CUBIC_METER = (
+        UnitOfDensity.MICROGRAMS_PER_CUBIC_METER)
+    CONCENTRATION_MILLIGRAMS_PER_CUBIC_METER = (
+        UnitOfDensity.MILLIGRAMS_PER_CUBIC_METER)
     CONCENTRATION_PARTS_PER_MILLION = UnitOfRatio.PARTS_PER_MILLION
-except (ImportError, AttributeError):
-    try:
-        from homeassistant.const import (  # type: ignore
-            CONCENTRATION_PARTS_PER_BILLION,
-            CONCENTRATION_PARTS_PER_MILLION,
-        )
-    except (ImportError, AttributeError):
-        CONCENTRATION_PARTS_PER_BILLION = 'ppb'
-        CONCENTRATION_PARTS_PER_MILLION = 'ppm'
+    CONCENTRATION_PARTS_PER_BILLION = UnitOfRatio.PARTS_PER_BILLION
+    PERCENTAGE = UnitOfRatio.PERCENTAGE
+except ImportError:
+    from homeassistant.const import (
+        CONCENTRATION_MICROGRAMS_PER_CUBIC_METER,
+        CONCENTRATION_MILLIGRAMS_PER_CUBIC_METER,
+        CONCENTRATION_PARTS_PER_BILLION,
+        CONCENTRATION_PARTS_PER_MILLION,
+        PERCENTAGE)
 
 MIOT_UNIT_MAP = {
     'percentage': PERCENTAGE,
@@ -160,7 +144,7 @@ MIOT_UNIT_MAP = {
     'MB/s': UnitOfDataRate.MEGABYTES_PER_SECOND,
     'GB/s': UnitOfDataRate.GIGABYTES_PER_SECOND,
     'mWh': UnitOfEnergy.MILLIWATT_HOUR,
-    'μS/cm': _MICROSIEMENS_PER_CM
+    'μS/cm': UnitOfConductivity.MICROSIEMENS_PER_CM
 }
 
 MIOT_ICON_MAP = {
