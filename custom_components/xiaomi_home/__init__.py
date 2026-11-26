@@ -28,7 +28,9 @@ from .miot.const import (
     SUPPORTED_PLATFORMS)
 from .miot.miot_error import MIoTOauthError
 from .miot.miot_device import MIoTDevice
-from .miot.miot_client import MIoTClient, get_miot_instance_async
+from .miot.miot_client import (
+    CtrlMode, MIoTClient, get_miot_instance_async)
+from .miot.miio_specs import MIIO_SPECS
 from .data import XiaomiHomeConfigEntry, XiaomiHomeData
 
 _LOGGER = logging.getLogger(__name__)
@@ -262,8 +264,15 @@ async def async_setup_entry(
                         er_entries.remove(entry)
                         break
 
+        cloud_mode = miot_client.ctrl_mode == CtrlMode.CLOUD
         for did, info in miot_client.device_list.items():
-            spec_instance = await spec_parser.parse(urn=info['urn'])
+            # In CLOUD the device is served by the MIOT spec as-is:
+            # the parser skips the miio-scaled overrides from the spec
+            # files, which would mislabel the cloud's values.
+            spec_instance = await spec_parser.parse(
+                urn=info['urn'],
+                pure=(cloud_mode and
+                      info.get('model', '') in MIIO_SPECS))
             if not isinstance(spec_instance, MIoTSpecInstance):
                 _LOGGER.error('spec content is None, %s, %s', did, info)
                 continue

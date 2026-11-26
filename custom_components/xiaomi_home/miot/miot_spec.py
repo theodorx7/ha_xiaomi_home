@@ -1220,6 +1220,7 @@ class MIoTSpecParser:
         self,
         urn: str,
         skip_cache: bool = False,
+        pure: bool = False,
     ) -> Optional[MIoTSpecInstance]:
         """MUST await init first !!!"""
         if not skip_cache:
@@ -1230,7 +1231,7 @@ class MIoTSpecParser:
         # Retry three times
         for index in range(3):
             try:
-                return await self.__parse(urn=urn)
+                return await self.__parse(urn=urn, pure=pure)
             except Exception as err:  # pylint: disable=broad-exception-caught
                 _LOGGER.error('parse error, retry, %d, %s, %s, %s', index, urn,
                               err, traceback.format_exc())
@@ -1255,8 +1256,8 @@ class MIoTSpecParser:
         for index in range(0, len(urn_list), 5):
             batch = urn_list[index:index + 5]
             task_list = [
-                self._main_loop.create_task(self.parse(urn=urn,
-                                                       skip_cache=True))
+                self._main_loop.create_task(self.parse(
+                    urn=urn, skip_cache=True))
                 for urn in batch
             ]
             results = await asyncio.gather(*task_list)
@@ -1287,6 +1288,7 @@ class MIoTSpecParser:
         service: dict[str, Any],
         spec_service: MIoTSpecService,
         type_strs: list[str],
+        pure: bool,
     ) -> None:
         """Parse properties of a service."""
         for property_ in service.get('properties', []):
@@ -1325,8 +1327,10 @@ class MIoTSpecParser:
                     key=p_type_strs_prefix_5) or
                 property_['description'] or spec_prop.name)
             # Modify value-list before translation
-            v_list: list[dict] = self._spec_modify.get_prop_value_list(
-                siid=service['iid'], piid=property_['iid'])
+            v_list: Optional[list[dict]] = None
+            if not pure:
+                v_list = self._spec_modify.get_prop_value_list(
+                    siid=service['iid'], piid=property_['iid'])
             if (v_list is None) and ('value-list' in property_):
                 v_list = property_['value-list']
             if v_list is not None:
@@ -1367,10 +1371,11 @@ class MIoTSpecParser:
                 siid=service['iid'], piid=property_['iid'])
             if custom_format:
                 spec_prop.format_ = custom_format
-            custom_range = self._spec_modify.get_prop_value_range(
-                siid=service['iid'], piid=property_['iid'])
-            if custom_range:
-                spec_prop.value_range = custom_range
+            if not pure:
+                custom_range = self._spec_modify.get_prop_value_range(
+                    siid=service['iid'], piid=property_['iid'])
+                if custom_range:
+                    spec_prop.value_range = custom_range
             custom_name = self._spec_modify.get_prop_name(
                 siid=service['iid'], piid=property_['iid'])
             if custom_name:
@@ -1456,7 +1461,7 @@ class MIoTSpecParser:
             ]
             spec_service.actions.append(spec_action)
 
-    async def __parse(self, urn: str) -> MIoTSpecInstance:
+    async def __parse(self, urn: str, pure: bool = False) -> MIoTSpecInstance:
         _LOGGER.debug('parse urn, %s', urn)
         # Load spec instance
         instance = await self.__get_instance(urn=urn)
@@ -1466,7 +1471,7 @@ class MIoTSpecParser:
         urn_strs: list[str] = urn.split(':')
         urn_key: str = ':'.join(urn_strs[:6])
         # Set translation cache
-        await self._multi_lang.set_spec_async(urn=urn)
+        await self._multi_lang.set_spec_async(urn=urn, pure=pure)
         # Set spec filter
         await self._spec_filter.set_spec_spec(urn_key=urn_key)
         # Set spec add
@@ -1483,7 +1488,8 @@ class MIoTSpecParser:
                 instance['description'] or urn_strs[3]))
         urn_service_instance = instance.get('services', [])
         # set spec instance in spec_add.json as not being filtered.
-        custom_service_instance = self._spec_add.get_service_add()
+        custom_service_instance = (
+            None if pure else self._spec_add.get_service_add())
         if custom_service_instance:
             for service in custom_service_instance:
                 service['need_filter'] = False
@@ -1528,7 +1534,7 @@ class MIoTSpecParser:
 
             # Parse service properties
             await self._parse_service_properties(service, spec_service,
-                                                 type_strs)
+                                                 type_strs, pure)
 
             # Build property lookup cache
             prop_map = {prop.iid: prop for prop in spec_service.properties}

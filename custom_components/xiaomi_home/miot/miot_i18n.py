@@ -38,7 +38,8 @@ class _MIoTSpecMultiLang:
         self._custom_cache = {}
         self._current_data = None
 
-    async def set_spec_async(self, urn: str) -> None:
+    async def set_spec_async(
+        self, urn: str, pure: bool = False) -> None:
         if urn in self._custom_cache:
             self._current_data = self._custom_cache[urn]
             return
@@ -74,7 +75,7 @@ class _MIoTSpecMultiLang:
                              self._MULTI_LANG_FILE))
             urn_strs: list[str] = urn.split(':')
             urn_key: str = ':'.join(urn_strs[:6])
-            if (isinstance(trans_local_json, dict) and
+            if (not pure and isinstance(trans_local_json, dict) and
                     urn_key in trans_local_json and
                     self._lang in trans_local_json[urn_key]):
                 trans_cache.update(trans_local_json[urn_key][self._lang])

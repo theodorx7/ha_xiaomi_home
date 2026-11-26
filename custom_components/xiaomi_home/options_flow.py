@@ -44,7 +44,7 @@ from .miot.miot_error import (
     MIoTConfigError)
 from .miot.miot_i18n import MIoTI18n
 from .miot.miot_network import MIoTNetwork
-from .miot.miot_client import MIoTClient, get_miot_instance_async
+from .miot.miot_client import CtrlMode, MIoTClient, get_miot_instance_async
 from .miot.miot_spec import MIoTSpecParser
 from .miot.miot_lan import MIoTLan
 from .network import (
@@ -84,6 +84,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
 
     _integration_language: str
     _ctrl_mode: str
+    _ctrl_mode_old: str
     _poll_priority: str
     _nick_name: str
     _home_selected_list: list
@@ -141,6 +142,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         self._storage_path = self._entry_data['storage_path']
         self._cloud_server = self._entry_data['cloud_server']
         self._ctrl_mode = self._entry_data.get('ctrl_mode', DEFAULT_CTRL_MODE)
+        self._ctrl_mode_old = self._ctrl_mode
         self._poll_priority = self._entry_data.get('poll_priority',
                                                    'cloud_first')
         self._integration_language = self._entry_data.get(
@@ -885,6 +887,11 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 await spec_parser.init_async()
                 self._trans_rules_count_success = (
                     await spec_parser.refresh_async(urn_list=urn_list))
+                if CtrlMode.load(self._ctrl_mode) == CtrlMode.CLOUD:
+                    # The refresh cached the MIIO-overridden specs;
+                    # CLOUD needs the pure MIOT.
+                    await self._miot_storage.remove_domain_async(
+                        domain='miot_specs')
                 await spec_parser.deinit_async()
         else:
             # SKIP update trans rules
@@ -1158,6 +1165,10 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         entry_title = (
             f'{self._nick_name_new or self._nick_name}: '
             f'{self._uid} [{CLOUD_SERVERS[self._cloud_server]}]')
+        if self._ctrl_mode != self._ctrl_mode_old:
+            # The cache holds the previous mode's spec (miio scales
+            # locally, pure MIOT in CLOUD): parse the new one.
+            await self._miot_storage.remove_domain_async(domain='miot_specs')
         # Update entry config
         self.hass.config_entries.async_update_entry(
             self._config_entry, title=entry_title, data=self._entry_data)
