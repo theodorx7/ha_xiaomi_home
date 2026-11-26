@@ -25,6 +25,8 @@ class MIoTErrorCode(Enum):
     # MIoT cert error code
     CODE_CERT_INVALID_CERT = -10050
     # MIoT spec error code, -10060
+    CODE_INVALID_PROPERTY = -10061
+    CODE_PROPERTY_NOT_WRITABLE = -10062
     # MIoT storage error code, -10070
     # MIoT ev error code, -10080
     # Mips service error code, -10090

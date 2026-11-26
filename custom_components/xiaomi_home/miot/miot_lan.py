@@ -27,8 +27,10 @@ from .common import (
 
 try:
     from .miio_specs import MIIO_SPECS
-except ImportError:
+except (ImportError, SyntaxError):
     MIIO_SPECS = {}
+    logging.getLogger(__name__).error(
+        'import miio_specs failed, MIIO support is disabled')
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -859,13 +861,11 @@ class MIoTLan:
                                     piid: int, timeout_ms: int) -> Any:
         spec = MIIO_SPECS[device.model]
         prop_key = f"prop.{siid}.{piid}"
-        if "miio_specs" not in spec or prop_key not in spec["miio_specs"]:
-            return None
-
-        prop_cfg = spec["miio_specs"][prop_key]
-        prop_name = prop_cfg.get("prop")
-        if not prop_name:
-            return None
+        prop_cfg = spec.get('miio_specs', {}).get(prop_key, None)
+        if not prop_cfg or not prop_cfg.get('prop'):
+            raise MIoTError('Unsupported property',
+                            MIoTErrorCode.CODE_INVALID_PROPERTY)
+        prop_name = prop_cfg['prop']
 
         # Call get_prop
         result_obj = await self.__call_api_async(
@@ -897,6 +897,16 @@ class MIoTLan:
             # Apply format cast if needed
             if prop_cfg.get('format') == 'onoff':
                 return val in ('on', True)
+
+            # The model's MIIO template: after dict/onoff, it converts the
+            # device value to the spec-v2 scale
+            if 'template' in prop_cfg and callable(prop_cfg['template']):
+                try:
+                    return prop_cfg['template'](val, {}, 100)
+                except Exception as err:  # pylint: disable=broad-exception-caught
+                    _LOGGER.exception(
+                        "Failed to execute template lambda for %s %s: %s",
+                        device.did, prop_key, err)
 
             return val
 
@@ -954,6 +964,12 @@ class MIoTLan:
 
         if result_obj and 'result' in result_obj:
             return {'did': device.did, 'siid': siid, 'piid': piid, 'code': 0}
+
+        # miIO errors nest the code in 'error': surface it like the gateway path
+        error = result_obj.get('error') if result_obj else None
+        if isinstance(error, dict) and 'code' in error:
+            return {'code': error['code'],
+                    'message': error.get('message', 'device error')}
 
         if result_obj and 'code' in result_obj:
             return result_obj
