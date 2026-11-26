@@ -14,6 +14,7 @@ from custom_components.xiaomi_home.miot.miot_cloud_manager import MIoTCloudManag
 async def test_lan_manager_coroutine_safety() -> None:
     """Test that MIoTLanManager does not leak coroutines on failure."""
     client = MagicMock()
+    client.is_prop_miio_uncovered.return_value = False
     client.miot_lan.init_done = True
     client.device_list_lan = {"dev1": {"ip": "192.168.1.100"}}
     client.refresh_props_list = {
@@ -35,6 +36,7 @@ async def test_lan_manager_coroutine_safety() -> None:
 async def test_cloud_manager_sanitization_and_coroutine_resilience() -> None:
     """Test that MIoTCloudManager sanitizes dirty items without crashing."""
     client = MagicMock()
+    client.is_prop_miio_covered.return_value = False
     client.miot_network.network_status = True
 
     # Simulate refresh_props_list having a contaminated item with extra
@@ -73,6 +75,7 @@ async def test_cloud_manager_sanitization_and_coroutine_resilience() -> None:
 async def test_cloud_manager_timeout_handling() -> None:
     """Test that MIoTCloudManager re-queues sanitized items on timeout."""
     client = MagicMock()
+    client.is_prop_miio_covered.return_value = False
     client.miot_network.network_status = True
     client.refresh_props_list = {
         "dev1|2|1": {"did": "dev1", "siid": 2, "piid": 1}
@@ -91,6 +94,8 @@ async def test_cloud_manager_timeout_handling() -> None:
 
 def _refresh_client() -> MagicMock:
     client = MagicMock()
+    client.is_prop_miio_covered.return_value = False
+    client.is_prop_miio_uncovered.return_value = False
     client.miot_lan.init_done = True
     client.miot_network.network_status = True
     client.device_list_lan = {"dev1": {"ip": "192.168.1.100"}}

@@ -115,6 +115,7 @@ async def test_refresh_handler_survives_a_raising_refresh_path() -> None:
     with patch.object(MIoTClient, "__init__", lambda self, *a, **k: None):
         client = MIoTClient()  # pylint: disable=no-value-for-parameter
     client._refresh_props_list = {"1|2|3": {"did": "1", "siid": 2, "piid": 3}}
+    client._device_list_cache = {}
     client._ctrl_mode = CtrlMode.LOCAL
     client._entry_data = {}
     client._refresh_props_retry_count = 0
