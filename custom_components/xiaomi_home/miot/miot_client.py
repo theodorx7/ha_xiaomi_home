@@ -566,6 +566,12 @@ class MIoTClient:
 
     def get_device_control_path(self, did: str) -> str:
         if self._ctrl_mode in [CtrlMode.AUTO, CtrlMode.LOCAL]:
+            device_lan = self._device_list_lan.get(did, None)
+            if (
+                device_lan and device_lan.get('online', False)
+                and self._device_is_miio(did)
+            ):
+                return 'miIO'
             device_gw = self._device_list_gateway.get(did, None)
             if (
                 device_gw and device_gw.get('online', False)
@@ -574,7 +580,6 @@ class MIoTClient:
                 and self._mips_local.get(device_gw['group_id']) is not None
             ):
                 return 'Gateway'
-            device_lan = self._device_list_lan.get(did, None)
             if device_lan and device_lan.get('online', False):
                 return 'LAN'
         if self._ctrl_mode in [CtrlMode.AUTO, CtrlMode.CLOUD]:

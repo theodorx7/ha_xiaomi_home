@@ -17,6 +17,7 @@ from homeassistant.helpers.device_registry import DeviceEntry
 
 from .data import XiaomiHomeData
 from .miot.const import DOMAIN
+from .miot.miio_specs import MIIO_SPECS
 from .miot.miot_client import MIoTClient
 from .miot.miot_device import MIoTDevice
 
@@ -64,6 +65,7 @@ def _client_summary(miot_client: MIoTClient) -> dict[str, Any]:
         path = miot_client.get_device_control_path(did)
         paths[path] = paths.get(path, 0) + 1
     mips_cloud = miot_client.mips_cloud
+    models = {info.get('model') for info in miot_client.device_list.values()}
     return {
         'cloud_server': miot_client.cloud_server,
         'auth_rejected': miot_client.auth_rejected,
@@ -77,6 +79,7 @@ def _client_summary(miot_client: MIoTClient) -> dict[str, Any]:
         'lan_devices': len(miot_client.device_list_lan),
         'gateway_devices': len(miot_client.device_list_gateway),
         'devices_by_control_path': paths,
+        'miio_models': sorted(models & MIIO_SPECS.keys()),
     }
 
 
