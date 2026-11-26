@@ -27,8 +27,9 @@ from .const import (
     DEFAULT_COVER_DEAD_ZONE_WIDTH)
 from .miot_cloud import MIoTHttpClient, MIoTOauthClient
 from .miot_error import (
-    MIoTClientError, MIoTHttpError, MIoTErrorCode,
+    MIoTClientError, MIoTHttpError, MIoTError, MIoTErrorCode,
     MIoTOauthError, MIoTMipsError)
+from .miio_specs import MIIO_SPECS
 from .miot_mips import (
     MIoTDeviceState, MipsCloudClient, MipsDeviceState,
     MipsLocalClient)
@@ -382,8 +383,7 @@ class MIoTClient:
                         handler=self.__on_mips_local_state_changed)
                     mips.connect()
             # Lan ctrl
-            await self._miot_lan.vote_for_lan_ctrl_async(
-                key=f'{self._uid}-{self._cloud_server}', vote=True)
+            await self.__vote_for_lan_ctrl_async()
             self._miot_lan.sub_lan_state(
                 key=f'{self._uid}-{self._cloud_server}',
                 handler=self.__on_miot_lan_state_change)
@@ -397,8 +397,7 @@ class MIoTClient:
                     key=f'{self._uid}-{self._cloud_server}')
                 self._miot_lan.delete_devices(
                     devices=list(self._device_list_cache.keys()))
-            await self._miot_lan.vote_for_lan_ctrl_async(
-                key=f'{self._uid}-{self._cloud_server}', vote=False)
+            await self.__release_lan_votes_async()
 
         _LOGGER.info('init_async, %s, %s', self._uid, self._cloud_server)
 
@@ -448,8 +447,7 @@ class MIoTClient:
                     key=f'{self._uid}-{self._cloud_server}')
                 self._miot_lan.delete_devices(
                     devices=list(self._device_list_cache.keys()))
-            await self._miot_lan.vote_for_lan_ctrl_async(
-                key=f'{self._uid}-{self._cloud_server}', vote=False)
+            await self.__release_lan_votes_async()
         # Cancel refresh auth info
         if self._refresh_token_timer:
             self._refresh_token_timer.cancel()
@@ -584,6 +582,28 @@ class MIoTClient:
             if device_cloud and device_cloud.get('online', False):
                 return 'Cloud'
         return 'Offline'
+
+    def _device_is_miio(self, did: str) -> bool:
+        return (
+            self._device_list_cache.get(did, {}).get('model', None)
+            in MIIO_SPECS)
+
+    def is_prop_miio_covered(self, did: str, siid: int, piid: int) -> bool:
+        """True when the device's miio table has this prop."""
+        model = self._device_list_cache.get(did, {}).get('model', None)
+        return (
+            model in MIIO_SPECS
+            and f'prop.{siid}.{piid}' in MIIO_SPECS[model].get(
+                'miio_specs', {}))
+
+    def is_prop_miio_uncovered(self, did: str, siid: int, piid: int) -> bool:
+        return (
+            self._device_is_miio(did)
+            and not self.is_prop_miio_covered(did, siid, piid))
+
+    @property
+    def ctrl_mode(self) -> CtrlMode:
+        return self._ctrl_mode
 
     @property
     def device_list(self) -> dict:
@@ -830,6 +850,7 @@ class MIoTClient:
                 device_gw and device_gw.get('online', False)
                 and device_gw.get('specv2_access', False)
                 and 'group_id' in device_gw
+                and not self.is_prop_miio_covered(did, siid, piid)
             ):
                 mips = self._mips_local.get(device_gw['group_id'], None)
                 if mips is None:
@@ -855,12 +876,12 @@ class MIoTClient:
             # Lan control
             device_lan = self._device_list_lan.get(did, None)
             if device_lan and device_lan.get('online', False):
-                result = await self._miot_lan.set_prop_async(did=did,
-                                                             siid=siid,
-                                                             piid=piid,
-                                                             value=value,
-                                                             props=props,
-                                                             max_val=max_val)
+                try:
+                    result = await self._miot_lan.set_prop_async(
+                        did=did, siid=siid, piid=piid, value=value,
+                        props=props, max_val=max_val)
+                except MIoTError as err:
+                    raise MIoTClientError(str(err)) from err
                 _LOGGER.debug(
                     'lan set prop, %s.%d.%d, %s -> %s',
                     did, siid, piid, value, result)
@@ -1020,7 +1041,10 @@ class MIoTClient:
                         self.__get_exec_error_with_rc(rc=rc))
             # Lan control
             device_lan = self._device_list_lan.get(did, None)
-            if device_lan and device_lan.get('online', False):
+            if (
+                device_lan and device_lan.get('online', False)
+                and not self._device_is_miio(did)
+            ):
                 result = await self._miot_lan.action_async(
                     did=did, siid=siid, aiid=aiid, in_list=in_list)
                 _LOGGER.debug(
@@ -1144,6 +1168,7 @@ class MIoTClient:
             domain='miot_devices',
             name=f'{self._uid}_{self._cloud_server}',
             data=self._device_list_cache)
+        await self.__vote_for_lan_ctrl_async()
         # Update notify
         self.__request_show_devices_changed_notify()
 
@@ -1215,7 +1240,10 @@ class MIoTClient:
         elif sub_from in self._mips_local:
             mips = self._mips_local[sub_from]
         if mips is not None:
-            mips.sub_prop(did=did, handler=self.on_prop_msg)
+            # miio devices are LAN-polled in local modes: no prop pushes
+            if (not self._device_is_miio(did)
+                    or self._ctrl_mode == CtrlMode.CLOUD):
+                mips.sub_prop(did=did, handler=self.on_prop_msg)
             mips.sub_event(did=did, handler=self.__on_event_msg)
 
     @final
@@ -1435,23 +1463,7 @@ class MIoTClient:
                     await self._miot_lan.get_dev_list_async()).items():
                 await self.__on_lan_device_state_changed(
                     did=did, state=info, ctx=None)
-            self._miot_lan.update_devices(
-                devices={
-                    did: {
-                        'token':
-                            info['token'],
-                        'model':
-                            info['model'],
-                        'ip':
-                            info.get('local_ip') if self._cloud_server not in
-                            SUPPORT_CENTRAL_GATEWAY_CTRL else None,
-                        'connect_type':
-                            info['connect_type']
-                    }
-                    for did, info in self._device_list_cache.items()
-                    if 'token' in info and 'connect_type' in info and
-                    info['connect_type'] in LAN_CAPABLE_CONNECT_TYPES
-                })
+            await self.__sync_lan_devices()
         else:
             for did, info in self._device_list_lan.items():
                 if not info.get('online', False):
@@ -1715,6 +1727,69 @@ class MIoTClient:
         ):
             _LOGGER.error('save device list to cache failed')
 
+    def __gateway_seen(self) -> bool:
+        return (
+            # pylint: disable-next=protected-access
+            not self._miot_lan._ignore_mips_service
+            and self._cloud_server in SUPPORT_CENTRAL_GATEWAY_CTRL
+            and len(self._mips_service.get_services()) > 0)
+
+    @final
+    async def __sync_lan_devices(self) -> None:
+        gateway_seen = self.__gateway_seen()
+        lan_capable = [
+            (did, info) for did, info in self._device_list_cache.items()
+            if ('token' in info and 'connect_type' in info
+                and info['connect_type'] in LAN_CAPABLE_CONNECT_TYPES)]
+        devices = {
+            did: {
+                'token': info['token'],
+                'model': info['model'],
+                'ip': info.get('local_ip'),
+                'connect_type': info['connect_type'],
+            }
+            for did, info in lan_capable
+            if not gateway_seen or info.get('model', None) in MIIO_SPECS}
+        self._miot_lan.update_devices(devices=devices)
+        if gateway_seen:
+            dropped = [did for did, _ in lan_capable if did not in devices]
+            self._miot_lan.delete_devices(devices=dropped)
+            for did in dropped:
+                lan_info = self._device_list_lan.get(did, None)
+                if lan_info and lan_info.get('online', False):
+                    await self.__on_lan_device_state_changed(
+                        did=did,
+                        state={'online': False, 'push_available': False},
+                        ctx=None)
+
+    @final
+    async def __vote_for_lan_ctrl_async(self) -> None:
+        """Recompute and report this client's vote and miio report so
+        the shared layer stays up while this client needs it; the
+        report is set before the vote."""
+        vote = False
+        miio_required = False
+        if self._ctrl_mode in [CtrlMode.AUTO, CtrlMode.LOCAL]:
+            gateway_seen = self.__gateway_seen()
+            miio_present = any(
+                info.get('model', None) in MIIO_SPECS
+                for info in self._device_list_cache.values())
+            vote = miio_present or not gateway_seen
+            miio_required = gateway_seen and miio_present
+        key = f'{self._uid}-{self._cloud_server}'
+        await self._miot_lan.set_miio_required_async(
+            key=key, required=miio_required)
+        await self._miot_lan.vote_for_lan_ctrl_async(key=key, vote=vote)
+
+    @final
+    async def __release_lan_votes_async(self) -> None:
+        """Withdraw this client's vote and miio report so the shared
+        layer can stand down; the vote is withdrawn before the report."""
+        key = f'{self._uid}-{self._cloud_server}'
+        await self._miot_lan.vote_for_lan_ctrl_async(key=key, vote=False)
+        await self._miot_lan.set_miio_required_async(
+            key=key, required=False)
+
     @final
     async def __refresh_cloud_devices_async(self) -> None:
         _LOGGER.debug(
@@ -1759,23 +1834,8 @@ class MIoTClient:
             self._ctrl_mode in [CtrlMode.AUTO, CtrlMode.LOCAL]
             and self._miot_lan.init_done
         ):
-            self._miot_lan.update_devices(
-                devices={
-                    did: {
-                        'token':
-                            info['token'],
-                        'model':
-                            info['model'],
-                        'ip':
-                            info.get('local_ip') if self._cloud_server not in
-                            SUPPORT_CENTRAL_GATEWAY_CTRL else None,
-                        'connect_type':
-                            info['connect_type']
-                    }
-                    for did, info in self._device_list_cache.items()
-                    if 'token' in info and 'connect_type' in info and
-                    info['connect_type'] in LAN_CAPABLE_CONNECT_TYPES
-                })
+            await self.__sync_lan_devices()
+            await self.__vote_for_lan_ctrl_async()
 
         self.__request_show_devices_changed_notify()
 
@@ -1986,6 +2046,17 @@ class MIoTClient:
                     self._lan_manager.refresh_props_from_gw,
                     self._lan_manager.refresh_props_from_lan
                 ]
+
+        if self._ctrl_mode in [CtrlMode.AUTO, CtrlMode.LOCAL]:
+            miio_dids = {
+                key.split('|')[0] for key in self._refresh_props_list
+                if self._device_is_miio(key.split('|')[0])}
+            if miio_dids:
+                try:
+                    await self._lan_manager.refresh_props_from_lan(
+                        only_dids=miio_dids)
+                except Exception as err:  # pylint: disable=broad-exception-caught
+                    _LOGGER.warning('refresh props failed (miio), %r', err)
 
         for handler in handlers:
             try:

@@ -3,7 +3,7 @@ import asyncio
 import logging
 import traceback
 from itertools import islice
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 import aiohttp
 
@@ -21,7 +21,9 @@ class MIoTCloudManager:
     def __init__(self, client: 'MIoTClient') -> None:
         self.client = client
 
-    async def refresh_props(self, patch_len: int = 150) -> bool:
+    async def refresh_props(
+            self, patch_len: int = 150,
+            only_dids: Optional[set[str]] = None) -> bool:
         if not self.client.miot_network.network_status:
             return False
 
@@ -31,9 +33,20 @@ class MIoTCloudManager:
         # Properties the cloud did not return before wait for the gateway
         # or LAN instead of being asked for again
         missed = self.client.refresh_props_cloud_missed
+        # The cloud returns the MIOT-spec value, so it skips miio
+        # props in local modes.
+        skip_keys = {
+            key for key, val in self.client.refresh_props_list.items()
+            if isinstance(val, dict) and 'did' in val and 'siid' in val
+            and 'piid' in val
+            and self.client.is_prop_miio_covered(
+                val['did'], val['siid'], val['piid'])
+            and self.client.ctrl_mode.name != 'CLOUD'}
         request_items = dict(islice(
             ((key, val) for key, val in self.client.refresh_props_list.items()
-             if key not in missed), patch_len))
+             if key not in missed and key not in skip_keys
+             and (only_dids is None or key.split('|')[0] in only_dids)),
+            patch_len))
         for k in request_items:
             del self.client.refresh_props_list[k]
 
