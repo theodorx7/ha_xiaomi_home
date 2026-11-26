@@ -451,6 +451,8 @@ class MIoTLan:
 
     _lan_state_sub_map: dict[str, Callable[[bool], Coroutine]]
     _lan_ctrl_vote_map: dict[str, bool]
+    _miio_required_map: dict[str, bool]
+    _miio_required: bool
 
     _profile_models: dict[str, dict]
 
@@ -512,6 +514,8 @@ class MIoTLan:
 
         self._lan_state_sub_map = {}
         self._lan_ctrl_vote_map = {}
+        self._miio_required_map = {}
+        self._miio_required = False
 
         self._ignore_mips_service = ignore_mips_service
         self._init_lock = asyncio.Lock()
@@ -546,6 +550,12 @@ class MIoTLan:
     def init_done(self) -> bool:
         return self._init_done
 
+    @property
+    def _central_hub_online(self) -> bool:
+        return (
+            not self._ignore_mips_service
+            and len(self._mips_service.get_services()) > 0)
+
     def set_ignore_mips_service(self, ignore: bool) -> None:
         if self._ignore_mips_service == ignore:
             return
@@ -553,11 +563,30 @@ class MIoTLan:
         if self._ignore_mips_service and not self._init_done:
             self._main_loop.create_task(self.init_async())
 
+    async def set_miio_required_async(self, key: str, required: bool) -> None:
+        """Report this client's MIIO devices; the layer stays up
+        while any client reports them."""
+        if self._miio_required_map.get(key, False) == required:
+            return
+        self._miio_required_map[key] = required
+        miio_required = any(self._miio_required_map.values())
+        if self._miio_required == miio_required:
+            return
+        self._miio_required = miio_required
+        _LOGGER.debug('miio devices required, %s', miio_required)
+        if miio_required:
+            if not self._init_done:
+                await self.init_async()
+        else:
+            # No gateway: the layer still serves ordinary LAN devices
+            if self._central_hub_online:
+                await self.deinit_async()
+
     async def init_async(self) -> None:
         # Avoid race condition
         async with self._init_lock:
             if self._init_done:
-                _LOGGER.info('miot lan already init')
+                _LOGGER.debug('miot lan already init')
                 return
             if len(self._net_ifs) == 0:
                 _LOGGER.info('no net_ifs')
@@ -565,9 +594,9 @@ class MIoTLan:
             if not any(self._lan_ctrl_vote_map.values()):
                 _LOGGER.info('no vote for lan ctrl')
                 return
-            if not self._ignore_mips_service and len(
-                    self._mips_service.get_services()) > 0:
-                _LOGGER.info(
+            # Behind a gateway LAN control starts only for MIIO devices
+            if self._central_hub_online and not self._miio_required:
+                _LOGGER.debug(
                     'central hub gateway service exist, skipping lan init')
                 return
             for if_name in list(self._network.network_info.keys()):
@@ -607,7 +636,7 @@ class MIoTLan:
 
     async def deinit_async(self) -> None:
         if not self._init_done:
-            _LOGGER.info('miot lan not init')
+            _LOGGER.debug('miot lan not init')
             return
         self._init_done = False
         self._internal_loop.call_soon_threadsafe(self.__deinit)
@@ -657,7 +686,7 @@ class MIoTLan:
             net_ifs)
 
     async def vote_for_lan_ctrl_async(self, key: str, vote: bool) -> None:
-        _LOGGER.info('vote for lan ctrl, %s, %s', key, vote)
+        _LOGGER.debug('vote for lan ctrl, %s, %s', key, vote)
         self._lan_ctrl_vote_map[key] = vote
         if not any(self._lan_ctrl_vote_map.values()):
             await self.deinit_async()
@@ -719,6 +748,14 @@ class MIoTLan:
         return True
 
     @final
+    def _lan_subscribe_allowed(self) -> bool:
+        # Behind a gateway no LAN subscription: it delivers pushes itself
+        if self._ignore_mips_service:
+            return self._enable_subscribe
+        return self._enable_subscribe and len(
+            self._mips_service.get_services()) == 0
+
+    @final
     def sub_prop(
         self,
         did: str,
@@ -729,7 +766,7 @@ class MIoTLan:
     ) -> bool:
         if not self._init_done:
             return False
-        if not self._enable_subscribe:
+        if not self._lan_subscribe_allowed():
             return False
         key = (
             f'{did}/p/'
@@ -770,7 +807,7 @@ class MIoTLan:
     ) -> bool:
         if not self._init_done:
             return False
-        if not self._enable_subscribe:
+        if not self._lan_subscribe_allowed():
             return False
         key = (
             f'{did}/e/'
@@ -1066,10 +1103,10 @@ class MIoTLan:
     async def __on_mips_service_change(
         self, group_id: str,  state: MipsServiceState, data: dict
     ) -> None:
-        _LOGGER.info(
+        _LOGGER.debug(
             'on mips service change, %s, %s, %s',  group_id, state, data)
         if self._ignore_mips_service:
-            _LOGGER.info(
+            _LOGGER.debug(
                 'ignore mips service change due to ignore_mips_service flag, '
                 'init miot lan'
             )
@@ -1078,10 +1115,18 @@ class MIoTLan:
             return
 
         if len(self._mips_service.get_services()) > 0:
-            _LOGGER.info('find central service, deinit miot lan')
+            # Gateway present: keep LAN control for MIIO, else stop it
+            if self._miio_required:
+                _LOGGER.debug(
+                    'central service exist, miio devices keep miot lan')
+                if not self._init_done:
+                    await self.init_async()
+                return
+            _LOGGER.debug(
+                'central service exist, no miio device, stop miot lan')
             await self.deinit_async()
         else:
-            _LOGGER.info('no central service, init miot lan')
+            _LOGGER.debug('no central service, init miot lan')
             await self.init_async()
 
 # The following methods SHOULD ONLY be called in the internal loop
@@ -1238,8 +1283,9 @@ class MIoTLan:
             model = info.get('model')
 
             if model in MIIO_SPECS:
-                _LOGGER.info('model supports miio native transpilation, %s, %s',
-                             did, model)
+                _LOGGER.debug(
+                    'model supports miio native transpilation, %s, %s',
+                    did, model)
             elif (
                     'model' not in info
                     or info['model'] in self._profile_models):
@@ -1410,21 +1456,26 @@ class MIoTLan:
             and data[16:20] == b'MSUB'
             and data[24:27] == b'PUB'
         ):
-            device.supported_wildcard_sub = (
-                int(data[28]) == self.OT_SUPPORT_WILDCARD_SUB)
-            sub_ts = struct.unpack('>I', data[20:24])[0]
-            sub_type = int(data[27])
-            if (
-                device.supported_wildcard_sub
-                and sub_type in [0, 1, 4]
-                and sub_ts != device.sub_ts
-            ):
-                device.subscribed = False
-                try:
-                    device.subscribe()
-                except Exception as err:  # pylint: disable=broad-exception-caught
-                    _LOGGER.exception('subscribe device error, %s, %s', did,
-                                      err)
+            if not self._lan_subscribe_allowed():
+                if device.subscribed:
+                    device.unsubscribe()
+            elif device.model is None or device.model not in MIIO_SPECS:
+                # MIIO-spec models never answer miIO.sub: poll-only
+                device.supported_wildcard_sub = (
+                    int(data[28]) == self.OT_SUPPORT_WILDCARD_SUB)
+                sub_ts = struct.unpack('>I', data[20:24])[0]
+                sub_type = int(data[27])
+                if (
+                    device.supported_wildcard_sub
+                    and sub_type in [0, 1, 4]
+                    and sub_ts != device.sub_ts
+                ):
+                    device.subscribed = False
+                    try:
+                        device.subscribe()
+                    except Exception as err:  # pylint: disable=broad-exception-caught
+                        _LOGGER.exception('subscribe device error, %s, %s', did,
+                                          err)
         if data_len > self.OT_PROBE_LEN:
             # handle device message
             try:
