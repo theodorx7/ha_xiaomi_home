@@ -30,6 +30,7 @@ from .miot_error import (
     MIoTClientError, MIoTHttpError, MIoTError, MIoTErrorCode,
     MIoTOauthError, MIoTMipsError)
 from .miio_specs import MIIO_SPECS
+from .miio_errors import MIIO_ERRORS
 from .miot_mips import (
     MIoTDeviceState, MipsCloudClient, MipsDeviceState,
     MipsLocalClient)
@@ -877,7 +878,7 @@ class MIoTClient:
                     if rc in [0, 1]:
                         return True
                     raise MIoTClientError(
-                        self.__get_exec_error_with_rc(rc=rc))
+                        self.__get_exec_error_with_rc(did=did, rc=rc))
             # Lan control
             device_lan = self._device_list_lan.get(did, None)
             if device_lan and device_lan.get('online', False):
@@ -895,7 +896,7 @@ class MIoTClient:
                 if rc in [0, 1]:
                     return True
                 raise MIoTClientError(
-                    self.__get_exec_error_with_rc(rc=rc))
+                    self.__get_exec_error_with_rc(did=did, rc=rc))
 
         # Cloud control
         if self._ctrl_mode != CtrlMode.LOCAL:
@@ -923,7 +924,7 @@ class MIoTClient:
                             self.__refresh_cloud_device_with_dids_async(
                                 dids=[did]))
                     raise MIoTClientError(
-                        self.__get_exec_error_with_rc(rc=rc))
+                        self.__get_exec_error_with_rc(did=did, rc=rc))
 
         # Show error message
         raise MIoTClientError(
@@ -1043,7 +1044,7 @@ class MIoTClient:
                     if rc in [0, 1]:
                         return result.get('out', [])
                     raise MIoTClientError(
-                        self.__get_exec_error_with_rc(rc=rc))
+                        self.__get_exec_error_with_rc(did=did, rc=rc))
             # Lan control
             device_lan = self._device_list_lan.get(did, None)
             if (
@@ -1059,7 +1060,7 @@ class MIoTClient:
                 if rc in [0, 1]:
                     return result.get('out', [])
                 raise MIoTClientError(
-                    self.__get_exec_error_with_rc(rc=rc))
+                    self.__get_exec_error_with_rc(did=did, rc=rc))
         # Cloud control
         if self._ctrl_mode != CtrlMode.LOCAL:
             device_cloud = self._device_list_cloud.get(did, None)
@@ -1080,7 +1081,7 @@ class MIoTClient:
                             self.__refresh_cloud_device_with_dids_async(
                                 dids=[did]))
                     raise MIoTClientError(
-                        self.__get_exec_error_with_rc(rc=rc))
+                        self.__get_exec_error_with_rc(did=did, rc=rc))
         _LOGGER.error(
             'client action failed, %s.%d.%d', did, siid, aiid)
         raise MIoTClientError(
@@ -1184,9 +1185,11 @@ class MIoTClient:
                 await self.remove_device_async(did)
                 break
 
-    def __get_exec_error_with_rc(self, rc: int) -> str:
-        err_msg: Optional[str] = self._i18n.translate_str(
-            key=f'error.common.{rc}')
+    def __get_exec_error_with_rc(self, did: str, rc: int) -> str:
+        model = self._device_list_cache.get(did, {}).get('model', None)
+        err_msg = MIIO_ERRORS.get(model, {}).get(rc)
+        if not err_msg:
+            err_msg = self._i18n.translate_str(key=f'error.common.{rc}')
         if not err_msg:
             err_msg = f'{self._i18n.translate_str(key="error.common.-10000")}, '
             err_msg += f'code={rc}'
