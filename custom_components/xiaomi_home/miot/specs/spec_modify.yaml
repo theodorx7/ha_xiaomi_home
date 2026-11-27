@@ -154,6 +154,34 @@ urn:miot-spec-v2:device:air-fresh:0000A012:daikin-k33:1:
     access:
     - read
     - notify
+urn:miot-spec-v2:device:air-fresh:0000A012:zhimi-va4:2:
+  prop.5.1:
+    value-list:
+    - value: 0
+      description: Normal
+    - value: 1
+      description: Dim
+    - value: 2
+      description: 'Off'
+  prop.2.3:
+    value-list:
+    - value: 0
+      description: Interval
+    - value: 1
+      description: Sleep
+    - value: 2
+      description: Low
+    - value: 3
+      description: Medium
+    - value: 4
+      description: High
+    - value: 5
+      description: Auto
+  prop.3.3:
+    value-range:
+    - -40
+    - 125
+    - 0.1
 urn:miot-spec-v2:device:air-monitor:0000A008:cgllc-cgd1st:1:
   prop.3.7:
     value-range:

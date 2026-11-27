@@ -21,14 +21,23 @@ except ImportError:
     )
     sys.exit(1)
 
-# --- 1. Define the 19 Hyper-Focused Whitelist Models ---
+# --- 1. Define the Hyper-Focused Whitelist Models ---
 WHITELIST = []
 for model in MIIO_TO_MIOT_SPECS.keys():
     if (model.startswith('yeelink.light.lamp') or
         model.startswith('yeelink.light.bslamp') or
         model.startswith('zhimi.fan.') or
-        model.startswith('dmaker.fan.')):
+        model.startswith('dmaker.fan.') or
+        model.startswith('zhimi.airfresh.')):
         WHITELIST.append(model)
+
+MIIO_TO_MIOT_SPECS['zhimi.airfresh.va4']['miio_specs'][
+    'prop.3.102'] = {'prop': 'ntcT'}
+MIIO_TO_MIOT_SPECS['zhimi.airfresh.va4']['miio_specs']['prop.2.2'] = None
+MIIO_TO_MIOT_SPECS['zhimi.airfresh.va4']['miio_specs']['prop.2.3'] = {
+    'prop': 'mode', 'setter': True,
+    'dict': {'0': 'interval', '1': 'silent', '2': 'low',
+             '3': 'middle', '4': 'strong', '5': 'auto'}}
 
 # --- 2. Resolve `extend_model` Flattening ---
 def resolve_model(model_name, spec_dict):
@@ -72,6 +81,11 @@ def resolve_model(model_name, spec_dict):
 flattened_specs = {}
 for model in WHITELIST:
     flattened_specs[model] = resolve_model(model, MIIO_TO_MIOT_SPECS)
+
+flattened_specs['zhimi.airfresh.va4']['miio_specs'][
+    'prop.5.1'].pop('format', None)
+flattened_specs['zhimi.airfresh.va4']['miio_specs'][
+    'prop.3.3'].pop('template', None)
 
 # --- 3. Static Jinja to Python Lambda Mapping ---
 JINJA_TO_PYTHON = {
@@ -131,7 +145,9 @@ JINJA_TO_PYTHON = {
         'lambda value, props, max_val: ["nightlight", "on" if value == 2 else '
         '"off"]',
     '{{ 2 if value|int else 1 }}':
-        'lambda value, props, max_val: 2 if int(value) else 1'
+        'lambda value, props, max_val: 2 if int(value) else 1',
+    '{{ value|default(0,true)/10.0 }}':
+        'lambda value, props, max_val: (value or 0) / 10.0'
 }
 
 # --- 4. Format into Python Source Code ---

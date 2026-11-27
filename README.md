@@ -28,13 +28,13 @@ The official repository has had no release since v0.5.0; this fork has carried o
 ### 3. Local Control
 - **LAN control on every region**: Wi-Fi devices registered on overseas servers (Europe, Singapore, USA and others) can be controlled over the LAN, not only China mainland accounts.
 - **Unicast probing and polling**: devices are probed by unicast as well as broadcast, so they are found across VLANs where broadcasts are blocked, and LAN-capable entities poll their state locally. In Auto mode, **Polling Priority** chooses whether cloud or local polling comes first.
-- **Native MIIO control**: 19 popular devices that do not speak MIoT over the LAN (Yeelight desk, floor and bedside lamps, Smartmi `zhimi.fan.*` and Dmaker `dmaker.fan.p5` fans) are controlled locally through a built-in Python MIIO layer.
+- **Native MIIO control**: 21 popular devices that do not speak MIoT over the LAN (Yeelight desk, floor and bedside lamps, Smartmi `zhimi.airfresh.*`, `zhimi.fan.*` and Dmaker `dmaker.fan.p5` fans) are controlled locally through a built-in Python MIIO layer.
 
 ### 4. Stable Entity IDs
 - **Automatic migration**: unique IDs no longer carry the legacy `xiaomi_home.` prefix. Existing registry entries are rewritten on startup, duplicate `_2` entities from earlier versions are removed, and existing dashboards and automations keep working.
 
 ### 5. Diagnostics
-- **Control Path** sensor: shows whether a device is reached through the `Cloud`, `LAN` or a `Gateway`.
+- **Control Path** sensor: shows whether a device is reached through the `Cloud`, `LAN`, `miIO` or a `Gateway`.
 - **IP Address** sensor: shows the device's local IP address.
 - Both are diagnostic entities and are disabled by default.
 

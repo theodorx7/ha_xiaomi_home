@@ -1,4 +1,9 @@
 {
+  "urn:miot-spec-v2:device:air-fresh:0000A012:zhimi-va4": {
+    "en": {
+      "service:002:property:003:valuelist:002": "Low"
+    }
+  },
   "urn:miot-spec-v2:device:bath-heater:0000A028:yeelink-v10": {
     "en": {
       "service:003:property:001:valuelist:000": "Idle",
